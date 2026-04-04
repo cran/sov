@@ -1,0 +1,653 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+# sov
+
+<!-- badges: start -->
+
+[![R-CMD-check](https://github.com/spatial-voting-lab/sov/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/spatial-voting-lab/sov/actions/workflows/R-CMD-check.yaml)
+<!-- badges: end -->
+
+R package `sov` calculates vote-specific Shapley-Owen values (vs-SOVs)
+and traditional Shapely-Owen values (SOVs) for assemblies with weighted
+voting, various voting thresholds, and different numbers of dimensions.
+
+## Description
+
+This program calculates `vs-SOVs` and traditional `SOVs` in
+multidimensional space.
+
+- `vs-SOVs` utilize the “observed” normal vectors and their reflections
+  to determine the proportion of times a voter pivots.  
+- Traditional `SOVs` utilize all angles of the vote from 0 to 360
+  degrees for each dimension greater than 1.  
+- The package works for 1 to 4 dimensions, weighted voting, and various
+  voting thresholds.
+
+#### Voting Thresholds
+
+The package distinguishes between simple and absolute k-majority voting
+thresholds ([Dougherty and Edward
+2004](https://doi.org/10.1177/1470594X04042962)):
+
+- **Absolute k-majority:** Requires the yeas (weighted or unweighted) to
+  exceed a fixed number `q`, which treats abstentions as “nays.”
+- **Simple k-majority:** Requires the ratio of yeas to (yeas + nays) to
+  exceed a proportion `pr`, thereby it ignores abstentions.
+
+You can toggle between these modes using the `absolute` argument:
+
+``` r
+# To set an absolute threshold (e.g., US House majority):
+vs_sov(..., absolute = TRUE, q = 218)
+
+# To set a simple threshold (e.g., simple majority of those voting):
+vs_sov(..., absolute = FALSE, pr = 0.5001)
+```
+
+Functions `vs_sov()` and `sov()` use package-estimated inputs from
+W-NOMINATE (`wnominate`), Optimal Classification (`oc`), or MCMCpack
+(`MCMCpack`), with a function identifying which input is provided.
+
+Functions `vs_sov_user()` and `sov_user()` use ideal points, and other
+information, provided by the user.
+
+## Installation
+
+You can install the development version of `sov` from
+[GitHub](https://github.com/) with:
+
+``` r
+# install.packages("pak")
+pak::pak("emmabbn/sov")
+library(sov)
+```
+
+## Examples
+
+The following examples provide an **overview of the package’s core
+functions** and the type of data that can be used in these examples. We
+use simplified models to clearly illustrate the geometry of the
+Shapley-Owen Value (SOV) and vote-specific Shapley-Owen Value (vs-SOV)
+calculations.
+
+## Single-Dimension & `vs_sov_user()`
+
+Here, we demonstrate the use of `vs_sov_user()` with the simplest case:
+three voters in a one-dimensional policy space, voting on two roll
+calls. We use the user-defined input function, `vs_sov_user()`, to
+calculate the `vs-SOVs` under simple majority rule.
+
+### Inputs and Setup
+
+The ideal points and roll call specifications for the first example are
+set up below. Ideal points are defined at 0.7, 0.0, and -0.7. The normal
+vectors of the roll calls point to the right (+1) and to the left (-1),
+respectively.
+
+``` r
+## --- Ideals: 3 voters in 1D -----------------------------------------------
+i1 <- 0.7 
+i2 <- 0.0 
+i3 <- -0.7
+ideals <- cbind(coord1D = c(i1, i2, i3))
+rownames(ideals) <- paste0("i", 1:3)
+
+## --- Normals: 2 roll calls (x+, x-) ---------------------------------------
+nv1 <- 1; nv2 <- -1
+normals <- cbind(dim1 = c(nv1, nv2))
+rownames(normals) <- paste0("RC", 1:2)
+
+## --- Votes: 1=yea, 0=nay --------------------------------------------------
+votes <- cbind(
+  RC1 = c(1, 0, 0),
+  RC2 = c(0, 1, 1)
+)
+rownames(votes) <- rownames(ideals)
+
+## --- Equal voting weights (each voter's vote is worth 1) -------------------
+vw <- rep(1, nrow(ideals))
+```
+
+### Estimation
+
+#### Example 1
+
+As a reminder, this example illustrates a case with three voters in a
+one-dimensional policy space, voting on two roll calls. We set the
+required majority ($pr$) to be $50\% + \epsilon$. The results show that
+voter $i_2$ (the median voter at 0.0) has the highest `VS-SOV`,
+reflecting their central position in this simple policy space.
+
+``` r
+##### EX1: Vote-specific SOV (simple majority among attendees in 1D) #####
+out_ex1 <- vs_sov_user(
+  ideals   = ideals,
+  normals  = normals,
+  votes    = votes,
+  absolute = FALSE,    # simple k-majority
+  pr       = 0.5001,   # strict majority of attendees
+  vw       = vw,
+  dec      = 3
+)
+
+# aggregate results by member
+out_ex1$pivot_summary
+#>   name coord1D num_pivots vs_sov
+#> 1   i1     0.7          0      0
+#> 2   i2     0.0          2      1
+#> 3   i3    -0.7          0      0
+# pivot name(s) by roll call:
+out_ex1$pivot_by_rc
+#>   Position RC_num Pivot
+#> 1        1    RC1    i2
+#> 2        2    RC2    i2
+# normal vectors and corresponding angles:
+out_ex1$nv_and_angles
+#>   Position RC_num normVector1D Angle_Radians Angle_Degrees
+#> 1        1    RC1            1      0.000000             0
+#> 2        2    RC2           -1      3.141593           180
+
+#### CONTENTS
+# pivot_summary: VS-SOV (resp. SOV) for each voter.
+# pivot_by_rc: pivot name(s) for each roll call (ties shown in multiple columns).
+# nv_and_angles: the normal vector per roll call (resp. angles).
+
+# Plot
+labels_ex1 <- setNames(out_ex1$pivot_summary$vs_sov, out_ex1$pivot_summary$name)
+ sov:::plot_sov_geometry(
+  ideals = ideals,
+  normals = normals,
+  label_values = labels_ex1,
+  digits = 3,
+  main = "EX1: 1D VS-SOV (Simple Majority)"
+)
+```
+
+<img src="man/figures/README-ex1-1.png" width="100%" />
+
+## Multidimensional & `vs_sov_user()`
+
+Examples 2-4 expand the space to two dimensions (2D) using 5 voters and
+3 roll calls. They illustrate the use of simple versus absolute majority
+rule (EX2 and EX4), the use of midpoints in place of normal vectors (EX2
+and EX3), and a supermajority rule (EX4).
+
+### Inputs and Setup
+
+The ideal points and roll call specifications for examples 2-4 are set
+up below:
+
+``` r
+## --- Ideals: 5 voters in 2D -----------------------------------------------
+i1 <- c( 0.7,  0.7) 
+i2 <- c(-0.5,  0.5) 
+i3 <- c(-0.7, -0.7)
+i4 <- c( 0.5, -0.5) 
+i5 <- c( 0.0,  0.0)
+ideals <- rbind(i1, i2, i3, i4, i5)
+rownames(ideals) <- paste0("i", 1:5)
+colnames(ideals) <- c("coord1D","coord2D")
+
+## --- Normals: 3 roll calls (x+, y+, x-) -----------------------------------
+nv1 <- c( 1, 0)
+nv2 <- c( 0, 1)
+nv3 <- c(-1, 0)
+normals <- rbind(nv1, nv2, nv3)
+rownames(normals) <- paste0("RC", 1:3)
+
+## --- Votes: 1=yea, 0=nay, 9=attend but did not vote -----------------------
+votes <- cbind(
+  RC1 = c(1,0,0,1,9), # Note voter i5 attends but doesn't vote (9)
+  RC2 = c(1,1,0,0,0),
+  RC3 = c(0,1,1,0,0)
+)
+rownames(votes) <- rownames(ideals)
+
+## --- Equal voting weights (each voter's vote is worth 1) -------------------
+vw <- rep(1, nrow(ideals))
+```
+
+### Estimation
+
+#### Example 2
+
+The second example illustrates the use of `vs_sov_user()` in
+two-dimensional space, requiring the simple majority ($pr$) to be
+$50\% + \epsilon$. The `vs-SOV` calculation determines the influence of
+each voter based on the proximity of their ideal point to the three roll
+call cut lines, weighted by the voter’s attendance. Voter $i_5$ (at the
+origin) pivots all the roll calls among the attendees.
+
+``` r
+##### EX2: Simple majority example in 2D #####
+out_ex2 <- vs_sov_user(
+  ideals   = ideals,
+  normals  = normals,   # or use `midpoints = ...` if you prefer
+  votes    = votes,
+  absolute = FALSE,     # simple k-majority
+  pr       = 0.5001,    # strict majority of attendees
+  vw       = vw,
+  dec      = 3
+)
+
+# aggregate results by member
+out_ex2$pivot_summary
+#>   name coord1D coord2D num_pivots vs_sov
+#> 1   i1     0.7     0.7          0      0
+#> 2   i2    -0.5     0.5          0      0
+#> 3   i3    -0.7    -0.7          0      0
+#> 4   i4     0.5    -0.5          0      0
+#> 5   i5     0.0     0.0          3      1
+# Per-roll-call pivot names:
+out_ex2$pivot_by_rc
+#>   Position RC_num Pivot
+#> 1        1    RC1    i5
+#> 2        2    RC2    i5
+#> 3        3    RC3    i5
+# Normals + angles (degrees/radians) used for each roll call:
+out_ex2$nv_and_angles
+#>   Position RC_num normVector1D normVector2D Angle_Radians Angle_Degrees
+#> 1        1    RC1            1            0      0.000000             0
+#> 2        2    RC2            0            1      1.570796            90
+#> 3        3    RC3           -1            0      3.141593           180
+
+# Plot
+labels_ex2 <- setNames(out_ex2$pivot_summary$vs_sov, out_ex2$pivot_summary$name)
+ sov:::plot_sov_geometry(
+  ideals = ideals, 
+  normals = normals, 
+  label_values = labels_ex2, 
+  digits = 3,
+  main = "EX2: 2D VS-SOV (Simple Majority, Normals)"
+)
+```
+
+<img src="man/figures/README-ex2-1.png" width="100%" />
+
+#### Example 3
+
+Example 3 demonstrates how midpoints can be used to infer the roll call
+geometry in place of normal vectors. A midpoint is the orthogonal
+intersection of the normal vector and cut hyperplane. A cut hyperplane
+separates the yeas from the nays based on observed votes. Again, voter
+$i_5$ (at the origin) pivots all the roll calls among the attendees.
+
+``` r
+##### EX3: Using midpoints instead of normals in 2D #####
+
+## --- Midpoints corresponding to the normal vectors above -------------------------
+# Each row is where a cutplane intersects a normal vector
+mid1 <- c( 0.1,  0.0)   # RC1
+mid2 <- c( 0.0,  0.1)   # RC2
+mid3 <- c(-0.1,  0.0)   # RC3
+midpoints <- rbind(mid1, mid2, mid3)
+rownames(midpoints) <- paste0("RC", 1:3)
+colnames(midpoints) <- c("coord1D","coord2D")
+
+out_ex3 <- vs_sov_user(
+  ideals   = ideals,
+  midpoints = midpoints,        # <- used in place of normals
+  votes    = votes,
+  absolute = FALSE,
+  pr       = 0.5001,
+  vw       = vw,
+  dec      = 3
+)
+
+out_ex3$pivot_summary
+#>   name coord1D coord2D num_pivots vs_sov
+#> 1   i1     0.7     0.7          0      0
+#> 2   i2    -0.5     0.5          0      0
+#> 3   i3    -0.7    -0.7          0      0
+#> 4   i4     0.5    -0.5          0      0
+#> 5   i5     0.0     0.0          3      1
+out_ex3$pivot_by_rc
+#>   Position RC_num Pivot
+#> 1        1    RC1    i5
+#> 2        2    RC2    i5
+#> 3        3    RC3    i5
+out_ex3$nv_and_angles
+#>   Position RC_num normVector1D normVector2D Angle_Radians Angle_Degrees
+#> 1        1     v1            1            0      0.000000             0
+#> 2        2     v2            0            1      1.570796            90
+#> 3        3     v3           -1            0      3.141593           180
+
+# Plot
+vs_labels_mid <- setNames(out_ex3$pivot_summary$vs_sov, out_ex3$pivot_summary$name)
+ sov:::plot_sov_geometry(
+  ideals = ideals, 
+  midpoints = midpoints, 
+  label_values = vs_labels_mid, 
+  digits = 3,
+  main = "EX3: 2D VS-SOV (Simple Majority, Midpoints)"
+)
+```
+
+<img src="man/figures/README-ex3-1.png" width="100%" />
+
+#### Example 4
+
+Example 4 illustrates how `vs-SOVs` can be calculated with an absolute
+supermajority rule threshold of 4/5th. Note the use of $q$. Although
+this example is similar to example 2, the 4/5ths rule makes $i_2$
+pivotal on the second and third roll calls, while $i_4$ is pivotal on
+the first roll call – counting in the direction of the normal vector.
+
+``` r
+##### EX4: Supermajority (4/5ths) absolute example in 2D #####
+out_ex4 <- vs_sov_user(
+  ideals   = ideals,
+  normals  = normals,
+  votes    = votes,
+  absolute = TRUE,      # absolute k-majority
+  q        = 4,             # 4 of 5
+  vw       = vw,
+  dec      = 3
+)
+
+out_ex4$pivot_summary
+#>   name coord1D coord2D num_pivots    vs_sov
+#> 1   i1     0.7     0.7          0 0.0000000
+#> 2   i2    -0.5     0.5          2 0.6666667
+#> 3   i3    -0.7    -0.7          0 0.0000000
+#> 4   i4     0.5    -0.5          1 0.3333333
+#> 5   i5     0.0     0.0          0 0.0000000
+out_ex4$pivot_by_rc
+#>   Position RC_num Pivot
+#> 1        1    RC1    i4
+#> 2        2    RC2    i2
+#> 3        3    RC3    i2
+
+# Plot
+vs_labels_ex4 <- setNames(out_ex4$pivot_summary$vs_sov, out_ex4$pivot_summary$name)
+ sov:::plot_sov_geometry(
+  ideals = ideals, 
+  normals = normals, 
+  label_values = vs_labels_ex4, 
+  digits = 3,
+  main = "EX4: 2D VS-SOV (4/5ths)"
+)
+```
+
+<img src="man/figures/README-ex4-1.png" width="100%" />
+
+## Multidimensional & `sov_user()`
+
+Traditional `SOVs` involve integration over the entire policy space.
+Functions `sov_user()` and `sov()` approximate that integration by
+calculating the proportion of angles and individual pivots for each
+angle rotated through the space. For these functions, users only supply
+ideal points and an attendance vector (i.e., a vector of who is always
+present). You do not supply roll-call information.
+
+#### Example 5
+
+Example 5 illustrates the use of `sov_user()` which calculates
+traditional Shapley-Owen Values (`SOVs`) using user supplied inputs. The
+result shows the voter’s influence over all possible angles assuming
+those angles increase in increments of 5 degrees and are equally likely.
+
+``` r
+##### EX5: Traditional SOVs in 2D #####
+
+## --- Attendance: 1 = included, NA = excluded -------------------------------
+## Example: exclude i5 from the analysis
+av <- c(1, 1, 1, 1, NA)
+
+## --- Equal voting weights (each voter's vote is worth 1) -------------------
+vw <- rep(1, nrow(ideals))
+
+## --- Traditional SOV (simple majority among the four voters included) ------
+out_ex5 <- sov_user(
+  ideals   = ideals,
+  av       = av,
+  absolute = FALSE,     # simple k-majority 
+  pr       = 0.5001,
+  vw       = vw,
+  nPoints1 = 72,        # 360 degrees divided into 72 equal sized increments
+  nPoints2 = 72,
+  dec      = 3
+)
+
+# aggregate results by member
+out_ex5$pivot_summary
+#>   name coord1D coord2D num_pivots       sov
+#> 1   i1     0.7     0.7         15 0.2083333
+#> 2   i2    -0.5     0.5         21 0.2916667
+#> 3   i3    -0.7    -0.7         15 0.2083333
+#> 4   i4     0.5    -0.5         21 0.2916667
+#> 5   i5     0.0     0.0          0 0.0000000
+# Angles examined and names of pivotal voters by direction (uncomment to view)
+#  out_ex5$pivot_by_angle
+
+# Tip: switch to an absolute quota by setting absolute = TRUE and q = 3.
+# Those parameters would require 3 yeas regardless of who's included in the attendance vector, av.
+labels_ex5 <- setNames(out_ex5$pivot_summary$sov, out_ex5$pivot_summary$name)
+ sov:::plot_sov_geometry(
+  ideals = ideals, 
+  label_values = labels_ex5, 
+  digits = 3,
+  main = "EX5: 2D SOV (Traditional SOV)"
+)
+```
+
+<img src="man/figures/README-ex5-1.png" width="100%" />
+
+## Multidimensional & vs_sov()
+
+Vote-specific SOVs (`VS-SOVs`) can also be calculated from package
+estimated output, `estimates` using `vs_sov()`. The function can
+differentiate `estimates` produced by W-NOMINATE, Optimal
+Classification, and MCMCpack.
+
+#### Example 6
+
+Example 6 illustrates the use of `vs_sov()` based on W-NOMINATE. Note,
+it starts by fabricating a tiny WNOMINATE-like object built from the
+same 2-D ideals and roll calls used in Example 2. Users that have
+estimated ideal points using W-NOMINATE (resp., `oc` or `MCMCpack`) will
+only provide $estimates$. They will not need all of these preliminaries.
+
+``` r
+##### EX6: VS-SOVs in 2D using W-NOMINATE OUTPUT #####
+
+## --- Fabricate a minimal W-NOM like object called *estimates* -----------------------
+
+# Spreads pick the normal directions; midpoints place the cutplane.
+spreads <- rbind(
+  c( 1,  0),  # RC1: normal along +x
+  c( 0,  1),  # RC2: normal along +y
+  c(-1,  0)   # RC3: normal along -x
+)
+midpoints <- rbind(
+  c( 0.10,  0.00),  # RC1 cut near the origin on x
+  c( 0.00, -0.10),  # RC2 cut slightly below origin on y
+  c( 0.05,  0.00)   # RC3 cut near the origin on x
+)
+rownames(spreads)  <- rownames(midpoints) <- paste0("RC", 1:3)
+
+# Legislators must include coord1D/coord2D plus GMP and CC.  
+# The latter helps the function identify the type of estimate.
+
+# ideals from above
+leg <- data.frame(
+  coord1D = ideals[, 1],
+  coord2D = ideals[, 2],
+  GMP = 0.5,
+  CC  = 0.5,
+  row.names = rownames(ideals),
+  check.names = FALSE
+)
+
+# Rollcalls must include GMP and the WNOM fields midpoint*D and spread*D.
+rc <- data.frame(
+  GMP = rep(0.5, nrow(midpoints)),
+  midpoint1D = midpoints[, 1],
+  midpoint2D = midpoints[, 2],
+  spread1D   = spreads[, 1],
+  spread2D   = spreads[, 2],
+  row.names  = rownames(midpoints),
+  check.names = FALSE
+)
+
+# Dimensional weights (first must be 1); here we weight both dimensions equally.
+weights <- c(1, 1)
+
+# Minimal WNOM-like object
+estimates <- list(legislators = leg, rollcalls = rc, weights = weights)
+class(estimates) <- "nomObject"  # not strictly required by SOV
+
+## --- Votes: 1=yea, 0=nay, 9=attend-no-vote, NA=absent ----------------------
+votes <- cbind(
+  RC1 = c(1, 0, 0, 1, 9),        # include one '9' to illustrate attendance w/o voting
+  RC2 = c(1, 1, 0, 0, 0),
+  RC3 = c(0, 1, 1, 0, 0)
+)
+rownames(votes) <- rownames(ideals)
+
+## --- Equal voting weights (each voter's vote is worth 1) -------------------
+vw <- rep(1, nrow(ideals))
+
+## --- VS-SOV from WNOM-like estimates (simple majority among attendees) -----
+out_ex6 <- vs_sov(
+  estimates = estimates,
+  votes     = votes,
+  absolute  = FALSE,  # simple k-majority
+  pr        = 0.5001,
+  vw        = vw,
+  dec       = 3
+)
+
+# aggregate results by member
+out_ex6$pivot_summary
+#>   name coord1D coord2D num_pivots vs_sov
+#> 1   i1     0.7     0.7          0      0
+#> 2   i2    -0.5     0.5          0      0
+#> 3   i3    -0.7    -0.7          0      0
+#> 4   i4     0.5    -0.5          0      0
+#> 5   i5     0.0     0.0          3      1
+# Pivot names by roll call:
+out_ex6$pivot_by_rc
+#>   Position RC_num Pivot
+#> 1        1    RC1    i5
+#> 2        2    RC2    i5
+#> 3        3    RC3    i5
+# Normals and angles (derived from spreads & midpoints):
+out_ex6$nv_and_angles
+#>   Position RC_num normVector1D normVector2D Angle_Radians Angle_Degrees
+#> 1        1    RC1            1            0      0.000000             0
+#> 2        2    RC2            0            1      1.570796            90
+#> 3        3    RC3           -1            0      3.141593           180
+
+# Plot (uses the 'spreads' as normals -- after normalization)
+labels_ex6 <- setNames(out_ex6$pivot_summary$vs_sov, out_ex6$pivot_summary$name)
+normals_ex6 <- as.matrix(spreads)
+normals_ex6 <- normals_ex6 / sqrt(rowSums(spreads^2)) # Use spreads here to normalize spreads
+ sov:::plot_sov_geometry(
+  ideals = ideals, 
+  normals = normals_ex6, 
+  label_values = labels_ex6, 
+  digits = 3,
+  main = "EX6: VS-SOV (W-NOMINATE Input)"
+)
+```
+
+<img src="man/figures/README-ex6-1.png" width="100%" />
+
+#### Excel Export (EX6)
+
+The following is an extension of example 6, illustrating how the
+functions can write output to an excel file.
+
+``` r
+##### Excel export (optional) #####
+vs_sov_user(
+  ideals, normals, votes,
+  absolute      = FALSE, pr = 0.5001, vw = vw,
+  print_results = TRUE,           # writes an .xlsx workbook
+  out_dir       = "output"        # include a path to your output directory. 
+)
+# Note: If "out_dir" is missing, a path will be created to a subfolder called "output."
+```
+
+## Multidimensional & `sov()`
+
+`sov()` calculates traditional SOVs (`SOVs`) from package estimated
+output, called `estimates`. The function can differentiate `estimates`
+produced by W-NOMINATE, Optimal Classification, and MCMCpack.
+
+#### Example 7
+
+Example 7 illustrates the use of `sov()` based on W-NOMINATE output.
+
+``` r
+##### EX7: SOVs in 2D using W-NOMINATE OUTPUT #####
+av <- c(1, 1, 1, 1, NA); 
+names(av) <- rownames(ideals)
+vw <- rep(1, nrow(ideals))
+
+out_ex7 <- sov(
+  estimates     = estimates,
+  av            = av,
+  absolute      = FALSE,
+  pr            = 0.5001,
+  vw            = vw,
+  nPoints1      = 72,
+  nPoints2      = 72,
+  dec           = 3
+)
+
+# aggregate results by member
+out_ex7$pivot_summary
+#>   name coord1D coord2D num_pivots       sov
+#> 1   i1     0.7     0.7         15 0.2083333
+#> 2   i2    -0.5     0.5         21 0.2916667
+#> 3   i3    -0.7    -0.7         15 0.2083333
+#> 4   i4     0.5    -0.5         21 0.2916667
+#> 5   i5     0.0     0.0          0 0.0000000
+# Angles examined and names of pivotal voters by direction (uncomment to view)
+#  out_ex7$pivot_by_angle
+
+# Plot
+labels_ex7 <- setNames(out_ex7$pivot_summary$sov, out_ex7$pivot_summary$name)
+ sov:::plot_sov_geometry(
+  ideals = ideals, 
+  label_values = labels_ex7, 
+  digits = 3,
+  main = "EX7: Traditional SOV (W-NOMINATE Input)"
+)
+```
+
+<img src="man/figures/README-ex7-1.png" width="100%" />
+
+## Tips
+
+- The function will derive unit normals, rescale if needed, and
+  auto-correct polarity based on the votes.
+- Normals vs. Midpoints: provide one or the other, not both. With
+  midpoints, the code infers the normal vector and utilizes distance of
+  the midpoint to the origin.
+- Scaling: If your ideals/midpoints are outside the unit circle, the
+  function rescales them consistently, no extra work needed.
+- Votes: Keep at least one 1 and one 0 per dataset (overall), and feel
+  free to include a 9 to show ‘’attended but didn’t vote’’; it’s very
+  instructive.
+
+## References
+
+Bibina, Emma and Keith L. Dougherty. 2025. “Pivotal Voters at the U.S.
+Constitutional Convention: Shapley-Owen Values Reconsidered” (working
+paper).
+
+Dougherty, Keith and Julian Edward. 2004. “The Pareto efficiency and
+expected costs of k-majority rules.” *Politics, Philosophy, and
+Economics* 3(2): 161-89.
+
+Godfrey, Joseph, Bernard Grofman, and Scott L. Feld. 2011. “Applications
+of Shapley-Owen Values and the Spatial Copeland Winner.” *Political
+Analysis* 19(3): 306-324.
+
+Owen, Guillermo, and Lloyd S. Shapley. 1989. “Optimal Location of
+Candidates in Ideological Space.” *International Journal of Game Theory*
+18(3): 339-356.
