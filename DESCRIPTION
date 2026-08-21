@@ -1,7 +1,7 @@
 Package: sov
 Title: Calculate vs-SOVs and SOVs for Assemblies with D-Dimensional
         Voting
-Version: 1.0.3
+Version: 2.0.0
 Authors@R: c(
     person("Keith", "Dougherty", email = "dougherk@uga.edu", role = "aut"),
     person("Emma", "Bibina", email = "emma.bibina@uga.edu", role = c("aut", "cre"))
@@ -16,9 +16,9 @@ Config/testthat/edition: 3
 URL: https://github.com/spatial-voting-lab/sov
 BugReports: https://github.com/spatial-voting-lab/sov/issues
 NeedsCompilation: no
-Packaged: 2026-03-31 19:09:49 UTC; emmab
+Packaged: 2026-08-20 13:35:41 UTC; emmab
 Author: Keith Dougherty [aut],
   Emma Bibina [aut, cre]
 Maintainer: Emma Bibina <emma.bibina@uga.edu>
 Repository: CRAN
-Date/Publication: 2026-04-04 09:10:02 UTC
+Date/Publication: 2026-08-21 05:40:36 UTC
